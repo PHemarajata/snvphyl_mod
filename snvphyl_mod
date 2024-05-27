@@ -1,0 +1,186 @@
+task find_repeats {
+    input {
+        File fasta
+        Int length = 150
+        Int pid = 90
+    }
+
+    command {
+        find_repeats --fasta ${fasta} --length ${length} --pid ${pid}
+    }
+
+    output {
+        File output = "output.file"
+    }
+
+    runtime {
+        docker: "biocontainers/find_repeats:v1.8.2_cv1"
+    }
+}
+
+task smalt {
+    input {
+        File reference
+        File insfil
+        File fastq_collection
+        String insertmin = "20"
+        Float minid = 0.5
+        String insertmax = "1000"
+        String k = "13"
+        String oformat = "bam"
+    }
+
+    command {
+        smalt map -f ${oformat} -i ${insertmin} -j ${insertmax} -k ${k} -r ${reference} -o ${insfil} ${fastq_collection}
+    }
+
+    output {
+        File output = "output.bam"
+    }
+
+    runtime {
+        docker: "biocontainers/smalt:v1.0.0_cv1"
+    }
+}
+
+task freebayes {
+    input {
+        File reference
+        File input_bams
+    }
+
+    command {
+        freebayes -f ${reference} ${input_bams} > output.vcf
+    }
+
+    output {
+        File output = "output.vcf"
+    }
+
+    runtime {
+        docker: "biocontainers/freebayes:v1.1.0.46-0_cv1"
+    }
+}
+
+task regex_find_replace {
+    input {
+        File input
+    }
+
+    command {
+        regex_find_replace --input ${input} --pattern "'" --replacement ""
+    }
+
+    output {
+        File output = "output.file"
+    }
+
+    runtime {
+        docker: "biocontainers/regex_find_replace:v0.1.0_cv1"
+    }
+}
+
+task filter_stats {
+    input {
+        File tabfile
+    }
+
+    command {
+        filter_stats --tabfile ${tabfile} --summary "invalids"
+    }
+
+    output {
+        File output = "output.file"
+    }
+
+    runtime {
+        docker: "biocontainers/filter_stats:v1.8.2_cv1"
+    }
+}
+
+task snv_matrix {
+    input {
+        File phylip
+    }
+
+    command {
+        snv_matrix --phylip ${phylip}
+    }
+
+    output {
+        File output = "output.file"
+    }
+
+    runtime {
+        docker: "biocontainers/snv_matrix:v1.8.2_cv1"
+    }
+}
+
+task phyml {
+    input {
+        File input
+        String seq_model = "GTR"
+        String type_of_seq = "nt"
+    }
+
+    command {
+        phyml --input ${input} --model ${seq_model} --type_of_seq ${type_of_seq}
+    }
+
+    output {
+        File output = "output.tree"
+    }
+
+    runtime {
+        docker: "biocontainers/phyml:v3.3.20190321_cv1"
+    }
+}
+
+workflow snvphyl_workflow {
+    input {
+        File sequence_reads_paired
+        File reference
+    }
+
+    call find_repeats {
+        input:
+            fasta = reference
+    }
+
+    call smalt {
+        input:
+            reference = reference,
+            fastq_collection = sequence_reads_paired,
+            insfil = find_repeats.output
+    }
+
+    call freebayes {
+        input:
+            reference = reference,
+            input_bams = smalt.output
+    }
+
+    call regex_find_replace {
+        input:
+            input = freebayes.output
+    }
+
+    call filter_stats {
+        input:
+            tabfile = regex_find_replace.output
+    }
+
+    call snv_matrix {
+        input:
+            phylip = filter_stats.output
+    }
+
+    call phyml {
+        input:
+            input = snv_matrix.output
+    }
+
+    output {
+        File final_output = phyml.output
+    }
+}
